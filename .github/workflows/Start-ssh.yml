@@ -1,0 +1,43 @@
+#工作流名字
+name: Start SSH Servcer
+
+on:
+  workflow_dispatch:
+
+#环境变量
+env:
+  TZ: Asia/Shanghai
+
+#工作
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+    #步骤
+    steps:
+    #检出当前仓库
+    - name: Checkout
+      uses: actions/checkout@master
+      
+    #初始化环境变量
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-1804)
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
+        git config --global user.email "574863304@qq.com"
+        git config --global user.name "仁哥哥"
+
+               
+    #等待SSH连接到Actions
+    - name: SSH connection to Actions
+      uses: P3TERX/ssh2actions@v1.0.0
+      env:
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

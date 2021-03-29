@@ -1,0 +1,214 @@
+#工作流名字
+name: Build OpenWrt For N1
+
+#前提
+on:
+  repository_dispatch:
+    types: [Build OpenWrt For N1]
+    inputs:
+      config_path:
+        description: 'select input config path'
+        required: true
+        default: '_config/devices/N1/.config'
+        
+  workflow_dispatch:
+    inputs:
+      ssh:
+        description: 'SSH connection to Actions'
+        required: true
+        default: 'false'
+      config_path:
+        description: 'select input config path'
+        required: true
+        default: '_config/devices/N1/.config'
+
+#环境变量
+env:
+  REPO_URL: https://github.com/coolsnowwolf/lede
+  PACK_REPO_URL: https://github.com/tuanqing/mknop
+  REPO_BRANCH: master
+  FEEDS_CONF: _config/feeds.conf.default
+  DIY_P1_SH: _config/scripts/diy-part1.sh
+  DIY_P2_SH: _config/scripts/diy-part2.sh
+  TZ: Asia/Shanghai
+
+#工作
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+    steps:
+
+#初始化开发环境
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-1804)
+        sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* powershell openjdk* mysql* php* android*
+        sudo -E apt-get -y install build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 unzip zlib1g-dev lib32gcc1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib g++-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler antlr3 gperf swig libtinfo5
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
+        git config --global user.email "574863304@qq.com"
+        git config --global user.name "仁哥哥"
+        
+    #检出当前仓库
+    - name: Checkout
+      uses: actions/checkout@main
+               
+    #克隆源代码
+    - name: Clone source code
+      working-directory: /workdir
+      run: |
+        df -hT $PWD
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+        git clone $PACK_REPO_URL -b $REPO_BRANCH mknop
+        ln -sf /workdir/mknop $GITHUB_WORKSPACE/mknop
+        git clone https://github.com/tuanqing/install-program openwrt/package/utils/install-program
+        
+    #加载自定义的Feeds
+    - name: Load custom feeds
+      run: |
+        # [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
+        sed -i "s/\r//" $DIY_P1_SH
+        chmod +x $DIY_P1_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P1_SH
+
+    #更新Feeds
+    - name: Update feeds
+      run: cd openwrt && ./scripts/feeds update -a
+
+    #安装Feeds
+    - name: Install feeds
+      run: cd openwrt && ./scripts/feeds install -a
+        
+    #加载自定义的Config
+    - name: Load custom configuration
+      run: |
+        cp ${{ github.event.inputs.config_path }} openwrt/.config
+        sed -i "s/\r//" $DIY_P2_SH
+        chmod +x $DIY_P2_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P2_SH
+        
+    #修改默认网络
+    - name: Motify Default Network Ip Address
+      run: |
+        sed -i 's/192.168.1.1/192.168.31.2/g' openwrt/package/base-files/files/bin/config_generate
+        
+    #编译准备工作
+    - name: Ready To Compile
+      run: |
+        cd openwrt
+        find package/*/ feeds/*/ -maxdepth 2 -path "*luci-app-bypass/Makefile" | xargs -i sed -i 's/shadowsocksr-libev-ssr-redir/shadowsocksr-libev-alt/g' {}
+        find package/*/ feeds/*/ -maxdepth 2 -path "*luci-app-bypass/Makefile" | xargs -i sed -i 's/shadowsocksr-libev-ssr-server/shadowsocksr-libev-server/g' {}
+        make defconfig
+     
+    #等待SSH连接到Actions
+    - name: SSH connection to Actions
+      uses: P3TERX/ssh2actions@v1.0.0
+      if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
+      env:
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+
+    #下载包体
+    - name: Download package
+      id: package
+      run: |
+        cd openwrt
+        make download -j8 || make download -j1 V=s
+        df -h
+
+    #编译固件
+    - name: Compile the firmware
+      id: compile
+      run: |
+        cd openwrt
+        echo -e "$(($(nproc) + 1)) thread compile"
+        make -j$(($(nproc) + 1)) || make -j1 || make -j1 V=s
+        echo "::set-output name=status::success"
+        
+    #上传Bin目录
+    - name: Upload Bin Directory
+      uses: actions/upload-artifact@main
+      if: steps.compile.outputs.status == 'success'
+      with:
+        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: openwrt/bin/targets
+    
+    #打包刷机包
+    - name: Pack the flash package
+      id: flashpackage
+      if: steps.compile.outputs.status == 'success'
+      run: |
+        cp openwrt/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz mknop/openwrt/openwrt-armvirt-64-default-rootfs.tar.gz
+        cd mknop
+        sudo ./gen_openwrt -d -s 1024 -k latest -m phicomm-n1
+        echo "::set-output name=status::success"
+        
+    #上传刷机包
+    - name: Upload  the flash package
+      uses: actions/upload-artifact@main
+      if: steps.flashpackage.outputs.status == 'success'
+      with:
+        name: flashpackage
+        path: mknop/out/phicomm-n1/*
+    
+    #生成Release参数
+    - name: Generate Release Parms
+      run: |
+        cd openwrt
+        echo "DATE=$(date "+%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
+        echo "tag_name=$(date +%Y%m%d)" >> $GITHUB_ENV
+        useVersionInfo=$(git show -s --date=short --format="date: %cd<br/>commit: %s<br/>commit hash: %H")
+        echo "useVersionInfo=$useVersionInfo" >> $GITHUB_ENV
+    
+    #发布到Release    
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: steps.flashpackage.outputs.status == 'success'
+      with:
+        name: ${{ env.DATE }} ❤️ | N1-OpenWrt 自动编译
+        tag_name: ${{ env.tag_name }}
+        body: |
+          编译使用版本:
+          ${{ env.useVersionInfo }}
+        files: |
+          openwrt/.config
+          openwrt/feeds.conf.default
+          openwrt/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz
+          mknop/out/phicomm-n1/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    #删除旧的Release
+    - name: Remove old Releases
+      uses: dev-drprasad/delete-older-releases@v0.1.0
+      with:
+        keep_latest: 7
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    #清理垃圾
+    - name: Clean WorkDirectory
+      run: |
+        rm -rf mknop/openwrt/*
+        rm -rf mknop/out
+        rm -rf openwrt/bin/targets
+
+    #上传工作区到奶牛快传
+    - name: Upload firmware to cowtransfer
+      run: |
+        tar czvf workdir.tar openwrt mknop
+        curl -fsSL git.io/file-transfer | sh
+        ./transfer cow --block 2621440 -s -p 64 --no-progress workdir.tar 2>&1 | tee cowtransfer.log
+        echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
+        echo "::set-output name=url::$(cat cowtransfer.log | grep https | cut -f3 -d" ")"

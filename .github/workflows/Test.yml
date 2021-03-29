@@ -1,0 +1,34 @@
+#工作流名字
+name: Test
+
+#前提
+on:
+  workflow_dispatch:
+    inputs:
+      config_path:
+        description: 'select input config path'
+        required: true
+        default: '.config'
+
+#环境变量
+env:
+  TZ: Asia/Shanghai
+
+#工作
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+    #步骤
+    steps:     
+    #初始化环境变量
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        echo ${{ github.event.inputs.config_path }}
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
+        ln -sf /workdir $GITHUB_WORKSPACE
+        git config --global user.email "574863304@qq.com"
+        git config --global user.name "仁哥哥"
