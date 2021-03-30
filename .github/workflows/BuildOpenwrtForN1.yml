@@ -46,8 +46,6 @@ jobs:
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-1804)
-        sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* powershell openjdk* mysql* php* android*
-        sudo -E apt-get -y install build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 unzip zlib1g-dev lib32gcc1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib g++-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler antlr3 gperf swig libtinfo5
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
@@ -164,6 +162,7 @@ jobs:
     #生成Release参数
     - name: Generate Release Parms
       run: |
+        tar czvf workdir.tar /workdir/openwrt /workdir/mknop
         cd openwrt
         echo "DATE=$(date "+%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
         echo "tag_name=$(date +%Y%m%d)" >> $GITHUB_ENV
@@ -185,6 +184,7 @@ jobs:
           openwrt/feeds.conf.default
           openwrt/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz
           mknop/out/phicomm-n1/*
+          workdir.tar
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -203,12 +203,3 @@ jobs:
         rm -rf mknop/openwrt/*
         rm -rf mknop/out
         rm -rf openwrt/bin/targets
-
-    #上传工作区到奶牛快传
-    - name: Upload firmware to cowtransfer
-      run: |
-        tar czvf workdir.tar openwrt mknop
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer cow --block 2621440 -s -p 64 --no-progress workdir.tar 2>&1 | tee cowtransfer.log
-        echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
-        echo "::set-output name=url::$(cat cowtransfer.log | grep https | cut -f3 -d" ")"
