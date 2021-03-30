@@ -130,8 +130,8 @@ jobs:
     - name: Upload firmware to cowtransfer
       run: |
         ls -al
-        zip workdir.zip $GITHUB_WORKSPACE/openwrt $GITHUB_WORKSPACE/mknop
-        tar czvf workdir.tar $GITHUB_WORKSPACE/openwrt/ $GITHUB_WORKSPACE/mknop/
+        zip workdir.zip /workdir/openwrt /workdir/mknop
+        tar czvf workdir.tar /workdir/openwrt /workdir/mknop
         curl -fsSL git.io/file-transfer | sh
         ./transfer cow --block 2621440 -s -p 64 --no-progress workdir.tar workdir.zip 2>&1 | tee cowtransfer.log
         echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
