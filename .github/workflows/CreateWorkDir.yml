@@ -121,10 +121,18 @@ jobs:
       run: |
         ls -al
         tar czvf workdir.tar /workdir/openwrt /workdir/mknop
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer cow --block 2621440 -s -p 64 --no-progress workdir.tar 2>&1 | tee cowtransfer.log
-        echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
-        echo "::set-output name=url::$(cat cowtransfer.log | grep https | cut -f3 -d" ")"
+
+    #发布到Release    
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: steps.flashpackage.outputs.status == 'success'
+      with:
+        name: WorkDir
+        tag_name: workDir
+        body: |
+          编译使用版本:
+        files: |
+          workdir.tar
 
     #等待SSH连接到Actions
     - name: SSH connection to Actions
