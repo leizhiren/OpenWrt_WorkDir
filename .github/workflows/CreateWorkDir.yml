@@ -129,7 +129,7 @@ jobs:
     #上传工作区到奶牛快传
     - name: Upload firmware to cowtransfer
       run: |
-        tar czvf workdir.tar openwrt mknop
+        tar czvf workdir.tar $GITHUB_WORKSPACE/openwrt/ $GITHUB_WORKSPACE/mknop/
         curl -fsSL git.io/file-transfer | sh
         ./transfer cow --block 2621440 -s -p 64 --no-progress workdir.tar 2>&1 | tee cowtransfer.log
         echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
