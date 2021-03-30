@@ -116,8 +116,8 @@ jobs:
         make download -j8 || make download -j1 V=s
         df -h
 
-    #上传工作区到奶牛快传
-    - name: Upload firmware to cowtransfer
+    #打包工作区
+    - name: Pack Work Dir
       run: |
         ls -al
         tar czvf workdir.tar /workdir/openwrt /workdir/mknop
@@ -125,7 +125,6 @@ jobs:
     #发布到Release    
     - name: Release
       uses: softprops/action-gh-release@v1
-      if: steps.flashpackage.outputs.status == 'success'
       with:
         name: WorkDir
         tag_name: workDir
