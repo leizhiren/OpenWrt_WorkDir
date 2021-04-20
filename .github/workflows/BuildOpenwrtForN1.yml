@@ -28,8 +28,6 @@ env:
   PACK_REPO_URL: https://github.com/tuanqing/mknop
   REPO_BRANCH: master
   FEEDS_CONF: _config/feeds.conf.default
-  DIY_P1_SH: _config/scripts/diy-part1.sh
-  DIY_P2_SH: _config/scripts/diy-part2.sh
   TZ: Asia/Shanghai
 
 #工作
@@ -71,47 +69,66 @@ jobs:
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
         git clone $PACK_REPO_URL -b $REPO_BRANCH mknop
         ln -sf /workdir/mknop $GITHUB_WORKSPACE/mknop
-        git clone https://github.com/tuanqing/install-program openwrt/package/utils/install-program
         
     #加载自定义的Feeds
     - name: Load custom feeds
       run: |
-        # [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
-        sed -i "s/\r//" $DIY_P1_SH
-        chmod +x $DIY_P1_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
+        cp $FEEDS_CONF openwrt/feeds.conf.default
 
     #更新Feeds
     - name: Update feeds
-      run: cd openwrt && ./scripts/feeds update -a
-
-    #安装Feeds
-    - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
+      run: cd openwrt && ./scripts/feeds update -a        
         
-    #加载自定义的Config
-    - name: Load custom configuration
-      run: |
-        cp ${{ github.event.inputs.config_path }} openwrt/.config
-        sed -i "s/\r//" $DIY_P2_SH
-        chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
-        
-    #修改默认网络
-    - name: Motify Default Network Ip Address
-      run: |
-        sed -i 's/192.168.1.1/192.168.31.2/g' openwrt/package/base-files/files/bin/config_generate
-        
-    #编译准备工作
+    #修复错误与更换插件
     - name: Ready To Compile
       run: |
         cd openwrt
+
+        #修复源错误
         find package/*/ feeds/*/ -maxdepth 2 -path "*luci-app-bypass/Makefile" | xargs -i sed -i 's/shadowsocksr-libev-ssr-redir/shadowsocksr-libev-alt/g' {}
         find package/*/ feeds/*/ -maxdepth 2 -path "*luci-app-bypass/Makefile" | xargs -i sed -i 's/shadowsocksr-libev-ssr-server/shadowsocksr-libev-server/g' {}
-        make defconfig
+
+        #Install to EMMC
+        git clone https://github.com/tuanqing/install-program package/utils/install-program
+
+        #更换Docker源
+        rm -rf package/lean/luci-app-docker
+        git clone https://github.com/KFERMercer/luci-app-dockerman package/lean/luci-app-dockerman
+        git clone https://github.com/lisaac/luci-lib-docker package/utils/luci-lib-docker
+
+        #更换Argon主题
+        rm -rf package/lean/luci-theme-argon
+        git clone -b 18.06 https://github.com/jerrykuku/luci-theme-argon package/lean/luci-theme-argon
+        git clone https://github.com/jerrykuku/luci-app-argon-config package/lean/luci-theme-argon-config
+
+        #在线人数查看
+        git clone https://github.com/rufengsuixing/luci-app-onliner package/utils/luci-app-onliner
+
+        # 修复核心及添加温度显示
+        sed -i 's|pcdata(boardinfo.system or "?")|luci.sys.exec("uname -m") or "?"|g' feeds/luci/modules/luci-mod-admin-full/luasrc/view/admin_status/index.htm
+        sed -i 's/or "1"%>/or "1"%> ( <%=luci.sys.exec("expr `cat \/sys\/class\/thermal\/thermal_zone0\/temp` \/ 1000") or "?"%> \&#8451; ) /g' feeds/luci/modules/luci-mod-admin-full/luasrc/view/admin_status/index.htm
+
+        #修改默认登录IP地址
+        sed -i 's/192.168.1.1/192.168.31.2/g' package/base-files/files/bin/config_generate
      
+    #安装Feeds
+    - name: Install feeds
+      run: cd openwrt && ./scripts/feeds install -a
+
+    #加载自定义的Config
+    - name: Load custom configuration
+      run: |
+        make defconfig
+        cp ${{ github.event.inputs.config_path }} openwrt/.config
+        make defconfig
+
+    #下载包体
+    - name: Download package
+      id: package
+      run: |
+        cd openwrt
+        make download -j8 || make download -j1 V=s
+
     #等待SSH连接到Actions
     - name: SSH connection to Actions
       uses: P3TERX/ssh2actions@v1.0.0
@@ -120,21 +137,13 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
-    #下载包体
-    - name: Download package
-      id: package
-      run: |
-        cd openwrt
-        make download -j8 || make download -j1 V=s
-        df -h
-
     #编译固件
     - name: Compile the firmware
       id: compile
       run: |
         cd openwrt
         echo -e "$(($(nproc) + 2)) thread compile"
-        make -j$(($(nproc) + 2)) || make -j1 || make -j1 V=s
+        make -j$(($(nproc) + 2)) || make -j1 V=sc
         echo "::set-output name=status::success"
         
     #上传Bin目录
@@ -150,7 +159,7 @@ jobs:
       id: flashpackage
       if: steps.compile.outputs.status == 'success'
       run: |
-        cp openwrt/bin/targets/armvirt/64/openwrt-armvirt-64-default-rootfs.tar.gz mknop/openwrt/openwrt-armvirt-64-default-rootfs.tar.gz
+        cp openwrt/bin/targets/armvirt/64/openwrt-*-rootfs.tar.gz mknop/openwrt/
         cd mknop
         sudo ./gen_openwrt -d -s 1024 -k latest -m phicomm-n1
         echo "::set-output name=status::success"
