@@ -46,6 +46,10 @@ jobs:
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-1804)
+        sudo -E apt-get -qq install gcc g++ binutils patch bzip2 flex make gettext \
+        pkg-config unzip zlib1g-dev libc6-dev subversion libncurses5-dev gawk \
+        sharutils curl libxml-parser-perl ocaml-nox ocaml-nox ocaml ocaml-findlib \
+        libpcre3-dev binutils-gold python-yaml u-boot-tools device-tree-compiler
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
