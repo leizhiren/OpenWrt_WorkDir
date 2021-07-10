@@ -120,7 +120,8 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        cp ${{ github.event.inputs.config_path }} .config
+        cd ..
+        cp ${{ github.event.inputs.config_path }} openwrt/.config
         make defconfig
 
     #下载包体
