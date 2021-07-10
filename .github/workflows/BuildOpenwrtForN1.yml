@@ -118,6 +118,7 @@ jobs:
     #加载自定义的Config
     - name: Load custom configuration
       run: |
+        cp ${{ github.event.inputs.config_path }} openwrt/.config
         make defconfig
         cp ${{ github.event.inputs.config_path }} openwrt/.config
         make defconfig
